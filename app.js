@@ -29,7 +29,7 @@ async function createAlgoliaObject(payload) {
 }
 
 function validatePayload(payload) {
-    if (!payload.gcsUrl || !payload.itemId || !payload.pageNo) {
+    if (!payload.name || !payload.gcsUrl || !payload.itemId || !payload.pageNo) {
         return false;
     }
     return true;
