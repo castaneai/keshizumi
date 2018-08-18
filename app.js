@@ -4,36 +4,48 @@ const algoliaIndex = algoliaClient.initIndex('keshizumi');
 const vision = require('@google-cloud/vision');
 const visionClient = new vision.ImageAnnotatorClient();
 
-exports.keshizumi = async (data, context) => {
-    const pageId = data.attributes.pageId;
-    const itemId = data.attributes.itemId;
-    const gcsUrl = data.attributes.gcsUrl;
-    const publicUrl = data.attributes.publicUrl;
-    if (!pageId || !itemId || !gcsUrl || !publicUrl) {
-        console.error('invalid pubsubMessage: ', data.attributes);
+exports.keshizumi = async (pubsubMessage, context) => {
+    const payload = JSON.parse(Buffer.from(pubsubMessage.data, 'base64').toString())
+    await doKeshizumi(payload).catch(console.error);
+}
+
+async function doKeshizumi(payload) {
+    if (!validatePayload(payload)) {
+        conosle.error('invalid payload: ', payload);
         return;
     }
+    console.log('start keshizumize: ', payload);
+    const algoliaObject = await createAlgoliaObject(payload);
+    const res = await algoliaIndex.addObject(algoliaObject);
+    console.log('finished keshizumize (add to algoliasearch): ', res);
+}
 
-    console.log('start keshizumize: ', data.attributes);
-    const annotations = await detectAnnotations(gcsUrl);
-
-    const res = await algoliaIndex.addObject({
+async function createAlgoliaObject(payload) {
+    const annotations = await detectAnnotations(payload.gcsUrl);
+    return {
         annotations: annotations,
-        pageId: pageId,
-        itemId: itemId,
-        gcsUrl: gcsUrl,
-        publicUrl: publicUrl,
-    });
-    console.log('finished keshizumize: ', res);
+        ...payload,
+    };
+}
+
+function validatePayload(payload) {
+    if (!payload.gcsUrl || !payload.itemId || !payload.pageNo) {
+        return false;
+    }
+    return true;
 }
 
 async function detectAnnotations(gcsUrl) {
     const annotations = [];
     const results = await visionClient.textDetection(gcsUrl);
     results.forEach(res => {
-        res.textAnnotations.map(tn => {
-            return { text: tn.description, bounding: tn.boundingPoly.vertices };
-        }).forEach(an => annotations.push(an));
+        if (res.error) {
+            throw res.error;
+        }
+        if (res.textAnnotations.length > 0) {
+            // ひとつめが画像全体のテキストになってる
+            annotations.push(res.textAnnotations[0].description);
+        }
     });
     return annotations;
 }
